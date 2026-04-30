@@ -15,29 +15,35 @@
 ## 系统架构
 
 ```
-用户输入 (PDF/DOCX/URL/Markdown)
+用户输入 (PDF/DOCX/XLSX/URL/Markdown)
     ↓
-[源内容转换] → source_to_md/pdf_to_md.py / doc_to_md.py / web_to_md.py
+[源内容转换] → source_to_md/pdf_to_md.py / doc_to_md.py / excel_to_md.py / ppt_to_md.py / web_to_md.py
     ↓
 [创建项目] → project_manager.py init <项目名> --format <格式>
     ↓
-[模板选项] A) 使用已有模板 B) 自由设计
+[模板处理（可选）] — 默认跳过，直接自由设计
+    用户主动点名模板时：复制模板文件到项目目录
+    需要新建全局模板：使用 /create-template 工作流单独完成
     ↓
-[需要新模板？] → 使用 /create-template 工作流单独创建
+[Strategist] 策略师 - 八项确认与设计规范 → design_spec.md + spec_lock.md
     ↓
-[Strategist] 策略师 - 八项确认与设计规范
+[Image_Generator] 图片生成师（当选择 AI 生图时）
     ↓
-[Image_Generator] 图片生成师（当选择 AI 生成时）
+[Executor] 执行师
+    ├── 视觉构建：连续生成所有 SVG 页面 → svg_output/
+    ├── [Quality Check] svg_quality_checker.py（强制通过，0 错误）
+    └── 讲稿生成：完整讲稿 → notes/total.md
     ↓
-[Executor] 执行师 - 分阶段生成
-    ├── 视觉构建阶段：连续生成所有 SVG 页面 → svg_output/
-    └── 逻辑构建阶段：生成完整讲稿 → notes/total.md
+[图表校准（可选）] → verify-charts 工作流（含数据图表的幻灯片在此步骤校准坐标）
     ↓
 [后处理] → total_md_split.py（拆分讲稿）→ finalize_svg.py → svg_to_pptx.py
     ↓
-输出: 两个带时间戳的文件保存至 exports/：
-    ├── presentation_<timestamp>.pptx      ← 原生形状版（DrawingML）— 推荐用于编辑与交付
-    └── presentation_<timestamp>_svg.pptx ← SVG 快照版 — 像素级视觉参考备份
+输出：
+    exports/
+    └── presentation_<timestamp>.pptx          ← 原生形状版（DrawingML）— 推荐用于编辑与交付
+    backup/<timestamp>/
+    ├── presentation_svg.pptx                  ← SVG 快照版 — 像素级视觉参考备份
+    └── svg_output/                            ← Executor 原始 SVG 备份（重跑 finalize_svg → svg_to_pptx 即可重建 pptx）
 ```
 
 ---

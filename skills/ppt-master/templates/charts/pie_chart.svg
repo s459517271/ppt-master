@@ -4,6 +4,7 @@
     Purpose: Distribution and proportion analysis
     Use cases: Market share, budget allocation, demographic breakdown
     Supports: 5 segments (Recommended 3-6)
+    Convention: slices start at 12 o'clock and proceed clockwise
     -->
     <defs>
         <!-- Soft Shadow for Pie and Card -->
@@ -22,12 +23,14 @@
           font-size="32" font-weight="800" fill="#0F172A">Market Share Distribution</text>
     <text x="60" y="115" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" 
           font-size="14" font-weight="700" fill="#64748B" letter-spacing="1.5">Q3 2025 · TOTAL INDUSTRY MARKET SIZE: $12B</text>
+    <!-- chart-plot-area: pie | center: 420,400 | radius: 200 -->
     <!-- ==================== Pie Chart Graphic ==================== -->
     <g id="pieChart" transform="translate(420, 400)" filter="url(#softShadow)">
         <!-- 
         Center: (420, 400)
         Radius: 200px
         Start Angle: -90° (12 o'clock)
+        Direction: Clockwise
         White stroke creates a modern separated-slice look
         -->
         <!-- Segment 1: Competitor A 35% (-90° to 36°) -->

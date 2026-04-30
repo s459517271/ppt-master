@@ -15,29 +15,35 @@ The generated PPTX is a **design draft**, not a finished product. Think of it li
 ## System Architecture
 
 ```
-User Input (PDF/DOCX/URL/Markdown)
+User Input (PDF/DOCX/XLSX/URL/Markdown)
     ↓
-[Source Content Conversion] → source_to_md/pdf_to_md.py / doc_to_md.py / web_to_md.py
+[Source Content Conversion] → source_to_md/pdf_to_md.py / doc_to_md.py / excel_to_md.py / ppt_to_md.py / web_to_md.py
     ↓
 [Create Project] → project_manager.py init <project_name> --format <format>
     ↓
-[Template Option] A) Use existing template B) Free design
+[Template (optional)] — default: skip, proceed with free design
+    User names a template: copy template files into the project
+    Need a new global template: use /create-template workflow separately
     ↓
-[Need New Template?] → Use /create-template workflow separately
+[Strategist] - Eight Confirmations & Design Specifications → design_spec.md + spec_lock.md
     ↓
-[Strategist] - Eight Confirmations & Design Specifications
+[Image_Generator] (When AI image generation is selected)
     ↓
-[Image_Generator] (When AI generation is selected)
+[Executor]
+    ├── Visual construction: generate all SVG pages → svg_output/
+    ├── [Quality Check] svg_quality_checker.py (mandatory — must pass with 0 errors)
+    └── Notes generation: complete speaker notes → notes/total.md
     ↓
-[Executor] - Two-Phase Generation
-    ├── Visual Construction Phase: Generate all SVG pages → svg_output/
-    └── Logic Construction Phase: Generate complete speaker notes → notes/total.md
+[Chart calibration (optional)] → verify-charts workflow (for decks containing data charts)
     ↓
 [Post-processing] → total_md_split.py (split notes) → finalize_svg.py → svg_to_pptx.py
     ↓
-Output: Two timestamped files saved to exports/:
-    ├── presentation_<timestamp>.pptx      ← Native shapes (DrawingML) — recommended for editing & delivery
-    └── presentation_<timestamp>_svg.pptx ← SVG snapshot — pixel-perfect visual reference backup
+Output:
+    exports/
+    └── presentation_<timestamp>.pptx          ← Native shapes (DrawingML) — recommended for editing & delivery
+    backup/<timestamp>/
+    ├── presentation_svg.pptx                  ← SVG snapshot — pixel-perfect visual reference backup
+    └── svg_output/                            ← Archived Executor SVG source (rerun finalize_svg → svg_to_pptx to rebuild)
 ```
 
 ---

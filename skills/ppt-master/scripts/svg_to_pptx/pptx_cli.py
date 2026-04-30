@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import shutil
 import argparse
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,13 @@ from pathlib import Path
 from .pptx_dimensions import CANVAS_FORMATS, get_project_info
 from .pptx_discovery import find_svg_files, find_notes_files
 from .pptx_builder import create_pptx_with_native_svg
+from .pptx_narration import find_narration_files
 from .pptx_slide_xml import TRANSITIONS
+
+try:
+    from pptx_animations import ANIMATIONS as _ANIMATIONS
+except ImportError:
+    _ANIMATIONS = {}
 
 
 def main() -> None:
@@ -20,12 +27,18 @@ def main() -> None:
                     else ['fade', 'push', 'wipe', 'split', 'strips', 'cover', 'random'])
     )
 
+    animation_choices = (
+        ['none'] + (list(_ANIMATIONS.keys()) if _ANIMATIONS
+                    else ['fade', 'fly', 'zoom', 'appear'])
+        + ['mixed', 'random']
+    )
+
     parser = argparse.ArgumentParser(
         description='PPT Master - SVG to PPTX Tool (Office Compatibility Mode)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f'''
 Examples:
-    %(prog)s examples/ppt169_demo -s final    # Default: timestamped pair saved to exports/
+    %(prog)s examples/ppt169_demo -s final    # Default: main pptx -> exports/, SVG snapshot + svg_output -> backup/<ts>/
     %(prog)s examples/ppt169_demo --only native   # Only native shapes version
     %(prog)s examples/ppt169_demo --only legacy   # Only SVG image version
     %(prog)s examples/ppt169_demo -o out.pptx     # Explicit path (SVG ref -> out_svg.pptx)
@@ -42,6 +55,18 @@ SVG source directory (-s):
 Transition effects (-t/--transition):
     {', '.join(transition_choices)}
 
+Per-element entrance animation (-a/--animation, native shapes mode):
+    {', '.join(animation_choices)}
+    Notes: applied to top-level <g id="..."> SVG groups in z-order. Default is
+           "mixed" (auto-vary effects per group). Start mode set by
+           --animation-trigger, matching PowerPoint's Start dropdown:
+             on-click              one presenter click per group
+             with-previous         all groups start together on slide entry
+             after-previous (default)  cascade on slide entry;
+                                       gap = --animation-stagger seconds
+           mixed uses a curated visible-effect sequence across the deck; random samples
+           from the same visible-effect pool. Use "-a none" to disable.
+
 Compatibility mode (enabled by default):
     - Automatically generates PNG fallback images, SVG embedded as extension
     - Compatible with all Office versions (including Office LTSC 2021)
@@ -55,6 +80,13 @@ Speaker notes (enabled by default):
       1. Match by filename (recommended): 01_cover.md corresponds to 01_cover.svg
       2. Match by index: slide01.md corresponds to the 1st SVG (backward compatible)
     - Use --no-notes to disable
+
+Recorded narration:
+    %(prog)s examples/ppt169_demo -s final --recorded-narration audio
+    - Keeps speaker notes when enabled
+    - Embeds per-slide audio matched by SVG filename / slide number
+    - Sets slide auto-advance from audio duration so video export can use
+      "recorded timings and narrations"
 ''',
     )
 
@@ -79,12 +111,38 @@ Speaker notes (enabled by default):
     parser.add_argument('-t', '--transition', type=str, choices=transition_choices, default='fade',
                         help='Page transition effect (default: fade, use "none" to disable)')
     parser.add_argument('--transition-duration', type=float, default=0.4,
-                        help='Transition duration in seconds (default: 0.5)')
+                        help='Transition duration in seconds (default: 0.4)')
     parser.add_argument('--auto-advance', type=float, default=None,
                         help='Auto-advance interval in seconds (default: manual advance)')
 
+    parser.add_argument('-a', '--animation', type=str, choices=animation_choices,
+                        default='mixed',
+                        help='Per-element entrance animation (native shapes mode '
+                             'only). Pick a single effect, "mixed" (auto-vary per '
+                             'element, default), "random", or "none" to disable.')
+    parser.add_argument('--animation-duration', type=float, default=0.4,
+                        help='Per-element entrance duration in seconds (default: 0.4)')
+    parser.add_argument('--animation-trigger', type=str,
+                        choices=['on-click', 'with-previous', 'after-previous'],
+                        default='after-previous',
+                        help='Per-element Start mode (matches PowerPoint Start dropdown): '
+                             '"on-click" (one click per element), '
+                             '"with-previous" (all start together on slide entry), '
+                             '"after-previous" (default, cascade after the previous element).')
+    parser.add_argument('--animation-stagger', type=float, default=0.5,
+                        help='Delay between elements in --animation-trigger=after-previous '
+                             '(seconds, default 0.5). Ignored in other modes.')
+
     parser.add_argument('--no-notes', action='store_true',
                         help='Disable speaker notes embedding (enabled by default)')
+    parser.add_argument('--narration-audio-dir', type=str, default=None,
+                        help='Embed per-slide narration audio from this directory')
+    parser.add_argument('--use-narration-timings', action='store_true',
+                        help='Set slide auto-advance timings from narration audio durations')
+    parser.add_argument('--recorded-narration', type=str, default=None,
+                        help='Shortcut: embed narration audio and use its durations as recorded timings')
+    parser.add_argument('--narration-padding', type=float, default=0.5,
+                        help='Seconds to add after each narration before auto-advance (default: 0.5)')
 
     args = parser.parse_args()
 
@@ -122,6 +180,7 @@ Speaker notes (enabled by default):
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    backup_dir: Path | None = None
     if args.output:
         output_base = Path(args.output)
         native_path = output_base
@@ -131,9 +190,13 @@ Speaker notes (enabled by default):
         exports_dir = project_path / "exports"
         exports_dir.mkdir(parents=True, exist_ok=True)
         native_path = exports_dir / f"{project_name}_{timestamp}.pptx"
-        legacy_path = exports_dir / f"{project_name}_{timestamp}_svg.pptx"
+
+        backup_dir = project_path / "backup" / timestamp
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        legacy_path = backup_dir / f"{project_name}_svg.pptx"
 
     native_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
 
     verbose = not args.quiet
 
@@ -142,7 +205,20 @@ Speaker notes (enabled by default):
     if enable_notes:
         notes = find_notes_files(project_path, svg_files)
 
+    narration_audio: dict[str, Path] = {}
+    narration_audio_dir_arg = args.recorded_narration or args.narration_audio_dir
+    use_narration_timings = args.use_narration_timings or bool(args.recorded_narration)
+    if narration_audio_dir_arg:
+        narration_audio_dir = Path(narration_audio_dir_arg)
+        if not narration_audio_dir.is_absolute():
+            narration_audio_dir = project_path / narration_audio_dir
+        narration_audio = find_narration_files(narration_audio_dir, svg_files)
+        if verbose:
+            print(f"  Narration audio directory: {narration_audio_dir}")
+            print(f"  Narration audio matched: {len(narration_audio)}/{len(svg_files)} slide(s)")
+
     transition = args.transition if args.transition != 'none' else None
+    animation = args.animation if args.animation != 'none' else None
 
     shared_kwargs = dict(
         svg_files=svg_files,
@@ -154,6 +230,13 @@ Speaker notes (enabled by default):
         use_compat_mode=not args.no_compat,
         notes=notes,
         enable_notes=enable_notes,
+        animation=animation,
+        animation_duration=args.animation_duration,
+        animation_stagger=args.animation_stagger,
+        animation_trigger=args.animation_trigger,
+        narration_audio=narration_audio,
+        use_narration_timings=use_narration_timings,
+        narration_padding=args.narration_padding,
     )
 
     success = True
@@ -194,5 +277,19 @@ Speaker notes (enabled by default):
             **shared_kwargs,
         )
         success = success and ok
+
+        if ok and backup_dir is not None:
+            svg_output_src = project_path / "svg_output"
+            if svg_output_src.is_dir():
+                svg_output_dst = backup_dir / "svg_output"
+                try:
+                    shutil.copytree(svg_output_src, svg_output_dst)
+                    if verbose:
+                        print(f"  svg_output backup: {svg_output_dst}")
+                except Exception as exc:
+                    if verbose:
+                        print(f"  [warn] svg_output backup skipped: {exc}")
+            elif verbose:
+                print(f"  [info] svg_output/ not found, backup skipped")
 
     sys.exit(0 if success else 1)

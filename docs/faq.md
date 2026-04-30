@@ -32,7 +32,7 @@ Yes. PPT Master includes a built-in image generation script that supports multip
 
 ## Q: Can I edit the generated presentations?
 
-Yes! Both files are saved to `exports/` with a timestamp. The native `.pptx` produces **native PowerPoint shapes** — all text, graphics, and colors are directly editable without any conversion. The `_svg.pptx` is an SVG snapshot kept as a visual reference backup. Requires **Office 2016** or later.
+Yes. The main `.pptx` (native PowerPoint shapes — all text, graphics, and colors directly editable without any conversion) is saved to `exports/` with a timestamp. The SVG snapshot `_svg.pptx` plus a copy of `svg_output/` (the Executor's raw SVG source) are archived to `backup/<timestamp>/`, so you can revisit the visual reference or rebuild the pptx via `finalize_svg → svg_to_pptx` without re-running the LLM. `backup/<timestamp>/` directories can be deleted manually when no longer needed. Requires **Office 2016** or later.
 
 ## Q: What's the difference between the three Executors?
 
@@ -40,18 +40,13 @@ Yes! Both files are saved to `exports/` with a timestamp. The native `.pptx` pro
 - **Executor_Consultant**: General consulting, data visualization
 - **Executor_Consultant_Top**: Top consulting (MBB level), 5 core techniques
 
-## Q: Isn't using Claude too expensive?
+## Q: Is PPT Master expensive to use?
 
-It depends on how you use it. If you're using a direct API or subscription quota, a single presentation may cost around **$5** — but compared to spending 1–2 days building a presentation manually, this is a reasonable trade-off.
+PPT Master itself is free and open source. The only cost is your own AI model usage.
 
-There are much cheaper options. **VS Code Copilot** at $10/month gives you 300 standard requests, which converts to roughly **100 premium (Opus-level) requests**. By default PPT Master has 2 confirmation rounds (template selection + eight confirmations), but if you specify "no template" upfront, it reduces to just **1 confirmation round — only 2 messages** (AI asks, you confirm). That means each presentation costs about **6 Opus requests** or **2 Sonnet requests**. At the $0.04 USD/request overage rate:
+AI tools across the industry are shifting to usage-based billing — you pay for what you actually consume. PPT Master works with this model naturally: there's no separate PPT subscription, no proprietary credits, no per-seat fee for a presentation platform on top of what you're already paying for AI.
 
-| Model | Requests per PPT | Overage Cost |
-|-------|:-----------------:|:------------:|
-| Opus | ~6 | ~$0.24 USD |
-| Sonnet | ~2 | ~$0.08 USD |
-
-For a complete presentation, **$0.08–$0.24 USD** is not expensive at all.
+For comparison, Gamma subscriptions run $8–20/month, Beautiful.ai $12–45/month — regardless of how much you actually use them. PPT Master adds zero cost on top of your existing AI spend.
 
 ## Q: Are the charts in the generated PPTX editable?
 
@@ -59,11 +54,25 @@ Charts are rendered as **custom-designed SVG graphics** converted to native Powe
 
 If your workflow specifically requires Excel-driven data editing, manually create a similar chart yourself in PowerPoint after export.
 
+## Q: Can I change page transitions and element animations?
+
+Yes. Page transitions (`fade` 0.4s by default) and per-element entrance animations (`mixed` effect with `after-previous` cascade by default) are both controlled by `svg_to_pptx.py` flags — `-t/--transition` for page-level and `-a/--animation` for element-level. Common one-liners:
+
+```bash
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project> -t push       # different transition
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project> -t none       # disable transitions
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project> -a none       # disable per-element animation
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project> --animation fade        # use a single effect instead of mixed
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project> --animation-trigger on-click   # presenter-paced reveals
+```
+
+Full effect list, anchor logic (top-level `<g id="...">`), fallback behavior, and limitations: see [Animations & Transitions](../skills/ppt-master/references/animations.md).
+
 ## Q: Which AI model works best?
 
 **Claude** (Opus / Sonnet) is the recommended and most tested model. SVG layout requires precise absolute-coordinate calculations (font size x character count x container width), and Claude handles this significantly better than alternatives.
 
-**GPT series** models tend to produce more layout issues — text overflowing containers, misaligned elements, coordinate miscalculations. If you must use a non-Claude model, try enabling Fast mode and keep expectations for layout precision lower.
+**GPT series** older versions tended to produce more layout issues — text overflowing containers, misaligned elements, coordinate miscalculations. Newer versions (e.g. GPT-5.5) have improved noticeably and are usable in practice; if issues appear, tell the AI which page to fix.
 
 Other models (Gemini, GLM, MiniMax, etc.) vary in quality. In general, models with stronger frontend/visual capabilities produce better results.
 
